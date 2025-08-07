@@ -1,0 +1,85 @@
+1. What type of business do you have, and what do you offer?
+We run a software and hardware company called X Software. We provide software development,
+ hardware services, consultations, and sell hardware products like chips.
+_____________________________________________
+2. How does money come in?
+
+$5,000/month from each of 5 companies (Loo, Poo, Moo, Noo, Roo) — for sprint-based development
+
+$666.66/hour from consultation services
+
+$100/unit from hardware chip sales (mainly to Kero or Mena)
+_______________________________________________
+
+
+$9,000/month for employee salaries
+
+$220/month on coffee (Amazon)
+
+$1,000/developer for laptops (Dell)
+
+$50/chip from Ram Electronics (supplies)
+
+Occasional course purchases from Udemy
+
+$70/month for Google Cloud
+
+Subscriptions for ChatGPT
+
+
+{
+  "general_info": {
+    "company_name": "X Software",
+    "reporting_date": "August 1, 2025"
+  },
+  "business_questions": {
+    "business_type": "We run a software and hardware company called X Software. We provide software development, hardware services, consultations, and sell hardware products like chips.",
+    "money_in": "$5,000/month from each of 5 companies (Loo, Poo, Moo, Noo, Roo) — for sprint-based development; $666.66/hour from consultation services; $100/unit from hardware chip sales (mainly to Kero or Mena).",
+    "money_out": "$9,000/month for employee salaries; $220/month on coffee (Amazon); $1,000/developer for laptops (Dell); $50/chip from Ram Electronics (supplies); occasional course purchases from Udemy; $70/month for Google Cloud; subscriptions for ChatGPT.",
+    "locked": true
+  },
+  "assets": {
+    "cash": "90000",
+    "accounts_receivable": "15000",
+    "inventory": "30000",
+    "prepaid_expenses": "2000",
+    "investments": "50000",
+    "property_plant_equipment": "80000",
+    "intangible_assets": "10000",
+    "other_assets": "5000"
+  },
+  "liabilities": {
+    "accounts_payable": "10000",
+    "short_term_loans": "15000",
+    "accrued_expenses": "5000",
+    "taxes_payable": "8000",
+    "long_term_debt": "40000",
+    "lease_obligations": "10000",
+    "other_liabilities": "3000"
+  },
+
+  
+  "timestamp": "2025-08-01 22:32:53",
+  "last_updated": "2025-08-01 22:32:53"
+}
+
+
+
+
+_______________
+user entry 
+
+bank 
+
+
+
+
+
+_____________________________________________
+
+
+
+1- they does not have any thing 
+
+2- data accountant - quick book ____ - complet
+                                    - not complet 

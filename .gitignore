@@ -1,5 +1,6 @@
 # Environment variables
 .env
+.env.backup
 .env.local
 .env.development.local
 .env.test.local
@@ -37,6 +38,8 @@ wheels/
 .DS_Store
 .DS_Store?
 ._*
+.AppleDouble
+.LSOverride
 .Spotlight-V100
 .Trashes
 ehthumbs.db

@@ -1,1 +1,1 @@
-Id,DocNumber,TxnDate,DueDate,VendorRef,TotalAmt,Balance,Memo,Line,PrivateNote,CurrencyRef,VendorAddr.Line1,VendorAddr.City,VendorAddr.Country,VendorAddr.PostalCode,VendorAddr.CountrySubDivisionCode,BillEmail,ExchangeRate,TxnTaxDetail,TxnApprovalInfo,quickbooks_id
+bill_id,bill_number,date,due_date,vendor_id,total_amount,balance_due,currency,notes,vendor_name,expense_id,expense_category,status,debit_account,debit_amount,credit_account,credit_amount,accounting_explanation

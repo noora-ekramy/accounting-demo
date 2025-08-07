@@ -1,1 +1,1 @@
-Id,DocNumber,TxnDate,DueDate,CustomerRef,TotalAmt,Balance,PrivateNote,BillEmail.Address,CurrencyRef,BillAddr.Line1,PaymentRefNum,TxnTaxDetail.TotalTax,quickbooks_id
+invoice_id,invoice_number,date,due_date,customer_id,total_amount,balance_due,tax_amount,payment_reference,notes,customer_name,service_id,service_name,status,debit_account,debit_amount,credit_account,credit_amount,accounting_explanation

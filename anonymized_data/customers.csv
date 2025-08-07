@@ -1,1 +1,1 @@
-Id,DisplayName,GivenName,FamilyName,CompanyName,PrimaryEmailAddr.Address,Mobile.FreeFormNumber,PrimaryPhone.FreeFormNumber,BillAddr.Line1,BillAddr.City,BillAddr.Country,BillAddr.PostalCode,BillAddr.CountrySubDivisionCode,Taxable,Balance,Notes,Active,quickbooks_id
+customer_id,name,company_name,email,phone,billing_address,city,country,balance,notes

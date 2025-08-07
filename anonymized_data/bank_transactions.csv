@@ -1,0 +1,1 @@
+transaction_id,date,description,amount,type,linked_account,customer_or_vendor,category,notes,matched_invoice_or_bill_id,cleared ,transaction_type,reference,account

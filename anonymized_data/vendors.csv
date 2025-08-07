@@ -1,1 +1,1 @@
-Id,DisplayName,CompanyName,GivenName,FamilyName,ContactName,PrimaryEmailAddr.Address,PrimaryPhone.FreeFormNumber,Fax.FreeFormNumber,Balance,CurrencyRef,BillAddr.Line1,BillAddr.City,BillAddr.Country,BillAddr.PostalCode,BillAddr.CountrySubDivisionCode,Active,quickbooks_id
+vendor_id,name,company_name,email,phone,address,city,country,balance,currency,notes
