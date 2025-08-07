@@ -1,0 +1,41 @@
+{
+  "general_info": {
+    "company_name": "X Software",
+    "reporting_date": "August 1, 2025"
+  },
+  "business_questions": {
+    "business_type": "We run a software and hardware company called X Software. We provide software development,\n hardware services, consultations, and sell hardware products like chips.",
+    "money_in": "$5,000/month from each of 5 companies (Loo, Poo, Moo, Noo, Roo) \u2014 for sprint-based development\n\n$666.66/hour from consultation services\n\n$100/unit from hardware chip sales (mainly to Kero or Mena)",
+    "money_out": "$9,000/month for employee salaries\n\n$220/month on coffee (Amazon)\n\n$1,000/developer for laptops (Dell)\n\n$50/chip from Ram Electronics (supplies)\n\nOccasional course purchases from Udemy\n\n$70/month for Google Cloud\n\nSubscriptions for ChatGPT",
+    "locked": true
+  },
+  "assets": {
+    "cash": "90000",
+    "accounts_receivable": "15000",
+    "inventory": "30000",
+    "prepaid_expenses": "2000",
+    "investments": "50000",
+    "property_plant_equipment": "80000",
+    "intangible_assets": "10000",
+    "other_assets": "5000"
+  },
+  "liabilities": {
+    "accounts_payable": "10000",
+    "short_term_loans": "15000",
+    "accrued_expenses": "5000",
+    "taxes_payable": "8000",
+    "long_term_debt": "40000",
+    "lease_obligations": "10000",
+    "other_liabilities": "3000"
+  },
+  "equity": {
+    "common_stock": "33",
+    "preferred_stock": "333",
+    "retained_earnings": "3333",
+    "additional_paid_in_capital": "3333",
+    "treasury_stock": "455"
+  },
+  "timestamp": "2025-08-07 20:55:12",
+  "last_updated": "2025-08-07 20:55:12",
+  "completed": true
+}
