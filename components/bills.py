@@ -31,6 +31,85 @@ def get_gemini_model():
         st.error(f"Error initializing Gemini model: {str(e)}")
         return None
 
+def save_new_vendor(vendor_data):
+    """Save a new vendor to the CSV file"""
+    vendors_file = os.path.join("anonymized_data", "vendors.csv")
+    
+    try:
+        # Load existing data or create new DataFrame
+        if os.path.exists(vendors_file):
+            df = pd.read_csv(vendors_file)
+        else:
+            df = pd.DataFrame(columns=[
+                'vendor_id', 'name', 'company_name', 'email', 'phone', 
+                'address', 'city', 'country', 'balance', 'currency', 'notes'
+            ])
+        
+        # Generate new vendor ID
+        if len(df) == 0:
+            new_id = "VEND001"
+        else:
+            last_id = df['vendor_id'].str.extract(r'VEND(\d+)').astype(int).max().iloc[0]
+            new_id = f"VEND{last_id + 1:03d}"
+        
+        # Add vendor ID to data
+        vendor_data['vendor_id'] = new_id
+        vendor_data['balance'] = 0.0
+        vendor_data['currency'] = 'USD'
+        
+        # Add new vendor
+        new_row = pd.DataFrame([vendor_data])
+        df = pd.concat([df, new_row], ignore_index=True)
+        
+        # Save back to CSV
+        os.makedirs("anonymized_data", exist_ok=True)
+        df.to_csv(vendors_file, index=False)
+        return new_id
+    except Exception as e:
+        st.error(f"Error saving vendor: {str(e)}")
+        return None
+
+def save_new_expense(expense_data):
+    """Save a new expense category to the CSV file"""
+    expenses_file = os.path.join("anonymized_data", "expenses.csv")
+    
+    try:
+        # Load existing data or create new DataFrame
+        if os.path.exists(expenses_file):
+            df = pd.read_csv(expenses_file)
+        else:
+            df = pd.DataFrame(columns=[
+                'expense_id', 'date', 'payment_type', 'vendor_or_entity', 
+                'total_amount', 'account_used', 'project', 'notes'
+            ])
+        
+        # Generate new expense ID
+        if len(df) == 0:
+            new_id = "EXP001"
+        else:
+            last_id = df['expense_id'].str.extract(r'EXP(\d+)').astype(int).max().iloc[0]
+            new_id = f"EXP{last_id + 1:03d}"
+        
+        # Add expense ID and default values
+        expense_data['expense_id'] = new_id
+        expense_data['date'] = datetime.now().strftime('%Y-%m-%d')
+        expense_data['payment_type'] = 'template'
+        expense_data['vendor_or_entity'] = 'Various'
+        expense_data['total_amount'] = 0.0
+        expense_data['project'] = 'General'
+        
+        # Add new expense
+        new_row = pd.DataFrame([expense_data])
+        df = pd.concat([df, new_row], ignore_index=True)
+        
+        # Save back to CSV
+        os.makedirs("anonymized_data", exist_ok=True)
+        df.to_csv(expenses_file, index=False)
+        return new_id
+    except Exception as e:
+        st.error(f"Error saving expense: {str(e)}")
+        return None
+
 def load_bills_data():
     """Load bills data from CSV file"""
     bills_file = os.path.join("anonymized_data", "bills.csv")
@@ -175,16 +254,81 @@ def show_bills_page():
     vendors_df = load_vendors_data()
     expenses_df = load_expenses_data()
     
-    # Check if we have vendors and expenses
-    if len(vendors_df) == 0:
-        st.error("❌ No vendors found! You must add vendors before creating bills.")
-        st.info("🏪 Go to the **Vendors** page to add vendors first.")
-        return
+    # Check if we have vendors and expenses - show creation forms if missing
+    show_vendor_creation = len(vendors_df) == 0
+    show_expense_creation = len(expenses_df) == 0
     
-    if len(expenses_df) == 0:
-        st.error("❌ No expense categories found! You must add expenses before creating bills.")
-        st.info("💰 Go to the **Expenses** page to add expense categories first.")
-        return
+    if show_vendor_creation or show_expense_creation:
+        st.warning("⚠️ Missing required data to create bills. Please add the missing items below:")
+        
+        # Create columns for missing data creation
+        if show_vendor_creation and show_expense_creation:
+            col1, col2 = st.columns(2)
+        elif show_vendor_creation:
+            col1, col2 = st.columns([2, 1])
+        else:
+            col1, col2 = st.columns([1, 2])
+        
+        # Vendor creation form
+        if show_vendor_creation:
+            with col1:
+                st.subheader("➕ Create Your First Vendor")
+                with st.form("quick_vendor_form"):
+                    vendor_name = st.text_input("Vendor Name*", placeholder="e.g., Office Depot")
+                    vendor_company = st.text_input("Company Name", placeholder="e.g., Office Depot Inc.")
+                    vendor_email = st.text_input("Email", placeholder="vendor@company.com")
+                    vendor_phone = st.text_input("Phone", placeholder="+1-555-123-4567")
+                    vendor_address = st.text_input("Address", placeholder="123 Business St")
+                    vendor_city = st.text_input("City", placeholder="New York")
+                    vendor_country = st.selectbox("Country", ["USA", "Canada", "UK", "Other"])
+                    vendor_notes = st.text_area("Notes", placeholder="Additional vendor information")
+                    
+                    if st.form_submit_button("Create Vendor", type="primary"):
+                        if vendor_name:
+                            vendor_data = {
+                                'name': vendor_name,
+                                'company_name': vendor_company or vendor_name,
+                                'email': vendor_email,
+                                'phone': vendor_phone,
+                                'address': vendor_address,
+                                'city': vendor_city,
+                                'country': vendor_country,
+                                'notes': vendor_notes
+                            }
+                            
+                            new_vendor_id = save_new_vendor(vendor_data)
+                            if new_vendor_id:
+                                st.success(f"✅ Vendor created with ID: {new_vendor_id}")
+                                st.rerun()
+                        else:
+                            st.error("Please enter a vendor name")
+        
+        # Expense creation form
+        if show_expense_creation:
+            with col2:
+                st.subheader("➕ Create Your First Expense Category")
+                with st.form("quick_expense_form"):
+                    expense_account = st.text_input("Account Name*", placeholder="e.g., Office Supplies Expense")
+                    expense_notes = st.text_area("Description", placeholder="What this expense category covers")
+                    
+                    if st.form_submit_button("Create Expense Category", type="primary"):
+                        if expense_account:
+                            expense_data = {
+                                'account_used': expense_account,
+                                'notes': expense_notes
+                            }
+                            
+                            new_expense_id = save_new_expense(expense_data)
+                            if new_expense_id:
+                                st.success(f"✅ Expense category created with ID: {new_expense_id}")
+                                st.rerun()
+                        else:
+                            st.error("Please enter an account name")
+        
+        # Stop here if missing data
+        if show_vendor_creation or show_expense_creation:
+            st.info("💡 After creating vendors and expense categories above, you'll be able to create bills!")
+            return
     
     # Create tabs for different sections
     tab1, tab2, tab3 = st.tabs(["📋 View Bills", "➕ Create Bill", "🤖 AI Assistant"])
@@ -272,6 +416,90 @@ def show_bills_page():
     
     with tab2:
         st.subheader("Create New Bill")
+        
+        # Quick creation buttons
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            if st.button("➕ Quick Add Vendor", help="Add a new vendor without leaving this page"):
+                st.session_state.show_vendor_quick_create = not st.session_state.get('show_vendor_quick_create', False)
+        with col2:
+            if st.button("➕ Quick Add Expense", help="Add a new expense category without leaving this page"):
+                st.session_state.show_expense_quick_create = not st.session_state.get('show_expense_quick_create', False)
+        
+        # Quick vendor creation form
+        if st.session_state.get('show_vendor_quick_create', False):
+            st.markdown("---")
+            st.subheader("➕ Quick Add Vendor")
+            with st.form("quick_add_vendor"):
+                qv_col1, qv_col2 = st.columns(2)
+                with qv_col1:
+                    qv_name = st.text_input("Vendor Name*", placeholder="e.g., Office Depot", key="qv_name")
+                    qv_email = st.text_input("Email", placeholder="vendor@company.com", key="qv_email")
+                    qv_city = st.text_input("City", placeholder="New York", key="qv_city")
+                with qv_col2:
+                    qv_company = st.text_input("Company Name", placeholder="e.g., Office Depot Inc.", key="qv_company")
+                    qv_phone = st.text_input("Phone", placeholder="+1-555-123-4567", key="qv_phone")
+                    qv_country = st.selectbox("Country", ["USA", "Canada", "UK", "Other"], key="qv_country")
+                
+                qv_col3, qv_col4 = st.columns([3, 1])
+                with qv_col3:
+                    if st.form_submit_button("Create Vendor", type="primary"):
+                        if qv_name:
+                            vendor_data = {
+                                'name': qv_name,
+                                'company_name': qv_company or qv_name,
+                                'email': qv_email,
+                                'phone': qv_phone,
+                                'address': '',
+                                'city': qv_city,
+                                'country': qv_country,
+                                'notes': f'Quick-created vendor on {datetime.now().strftime("%Y-%m-%d")}'
+                            }
+                            
+                            new_vendor_id = save_new_vendor(vendor_data)
+                            if new_vendor_id:
+                                st.success(f"✅ Vendor created with ID: {new_vendor_id}")
+                                st.session_state.show_vendor_quick_create = False
+                                st.rerun()
+                        else:
+                            st.error("Please enter a vendor name")
+                with qv_col4:
+                    if st.form_submit_button("Cancel"):
+                        st.session_state.show_vendor_quick_create = False
+                        st.rerun()
+        
+        # Quick expense creation form
+        if st.session_state.get('show_expense_quick_create', False):
+            st.markdown("---")
+            st.subheader("➕ Quick Add Expense Category")
+            with st.form("quick_add_expense"):
+                qe_col1, qe_col2 = st.columns([2, 1])
+                with qe_col1:
+                    qe_account = st.text_input("Account Name*", placeholder="e.g., Office Supplies Expense", key="qe_account")
+                    qe_notes = st.text_area("Description", placeholder="What this expense category covers", key="qe_notes")
+                
+                qe_col3, qe_col4 = st.columns([3, 1])
+                with qe_col3:
+                    if st.form_submit_button("Create Expense Category", type="primary"):
+                        if qe_account:
+                            expense_data = {
+                                'account_used': qe_account,
+                                'notes': qe_notes or f'Quick-created expense category on {datetime.now().strftime("%Y-%m-%d")}'
+                            }
+                            
+                            new_expense_id = save_new_expense(expense_data)
+                            if new_expense_id:
+                                st.success(f"✅ Expense category created with ID: {new_expense_id}")
+                                st.session_state.show_expense_quick_create = False
+                                st.rerun()
+                        else:
+                            st.error("Please enter an account name")
+                with qe_col4:
+                    if st.form_submit_button("Cancel"):
+                        st.session_state.show_expense_quick_create = False
+                        st.rerun()
+        
+        st.markdown("---")
         
         with st.form("create_bill_form"):
             col1, col2 = st.columns(2)

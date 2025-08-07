@@ -31,6 +31,73 @@ def get_gemini_model():
         st.error(f"Error initializing Gemini model: {str(e)}")
         return None
 
+def save_new_customer(customer_data):
+    """Save a new customer to the CSV file"""
+    customers_file = os.path.join("anonymized_data", "customers.csv")
+    
+    try:
+        # Load existing data or create new DataFrame
+        if os.path.exists(customers_file):
+            df = pd.read_csv(customers_file)
+        else:
+            df = pd.DataFrame(columns=[
+                'customer_id', 'name', 'company_name', 'email', 'phone', 
+                'billing_address', 'city', 'country', 'balance', 'notes'
+            ])
+        
+        # Generate new customer ID
+        if len(df) == 0:
+            new_id = "CUST001"
+        else:
+            last_id = df['customer_id'].str.extract(r'CUST(\d+)').astype(int).max().iloc[0]
+            new_id = f"CUST{last_id + 1:03d}"
+        
+        # Add customer ID to data
+        customer_data['customer_id'] = new_id
+        customer_data['balance'] = 0.0
+        
+        # Add new customer
+        new_row = pd.DataFrame([customer_data])
+        df = pd.concat([df, new_row], ignore_index=True)
+        
+        # Save back to CSV
+        os.makedirs("anonymized_data", exist_ok=True)
+        df.to_csv(customers_file, index=False)
+        return new_id
+    except Exception as e:
+        st.error(f"Error saving customer: {str(e)}")
+        return None
+
+def save_new_service(service_data):
+    """Save a new service to the CSV file"""
+    services_file = os.path.join("anonymized_data", "services.csv")
+    
+    try:
+        # Load existing data or create new DataFrame
+        if os.path.exists(services_file):
+            df = pd.read_csv(services_file)
+        else:
+            df = pd.DataFrame(columns=[
+                'name', 'description', 'type', 'unit_price', 'taxable', 'income_account_name'
+            ])
+        
+        # Add default values
+        service_data['type'] = service_data.get('type', 'Service')
+        service_data['taxable'] = service_data.get('taxable', 'yes')
+        service_data['income_account_name'] = service_data.get('income_account_name', 'Service Revenue')
+        
+        # Add new service
+        new_row = pd.DataFrame([service_data])
+        df = pd.concat([df, new_row], ignore_index=True)
+        
+        # Save back to CSV
+        os.makedirs("anonymized_data", exist_ok=True)
+        df.to_csv(services_file, index=False)
+        return service_data['name']
+    except Exception as e:
+        st.error(f"Error saving service: {str(e)}")
+        return None
+
 def load_invoices_data():
     """Load invoices data from CSV file"""
     invoices_file = os.path.join("anonymized_data", "invoices.csv")
@@ -175,16 +242,87 @@ def show_invoices_page():
     customers_df = load_customers_data()
     services_df = load_services_data()
     
-    # Check if we have customers and services
-    if len(customers_df) == 0:
-        st.error("❌ No customers found! You must add customers before creating invoices.")
-        st.info("👥 Go to the **Customers** page to add customers first.")
-        return
+    # Check if we have customers and services - show creation forms if missing
+    show_customer_creation = len(customers_df) == 0
+    show_service_creation = len(services_df) == 0
     
-    if len(services_df) == 0:
-        st.error("❌ No services found! You must add services before creating invoices.")
-        st.info("🛠️ Go to the **Services** page to add services first.")
-        return
+    if show_customer_creation or show_service_creation:
+        st.warning("⚠️ Missing required data to create invoices. Please add the missing items below:")
+        
+        # Create columns for missing data creation
+        if show_customer_creation and show_service_creation:
+            col1, col2 = st.columns(2)
+        elif show_customer_creation:
+            col1, col2 = st.columns([2, 1])
+        else:
+            col1, col2 = st.columns([1, 2])
+        
+        # Customer creation form
+        if show_customer_creation:
+            with col1:
+                st.subheader("➕ Create Your First Customer")
+                with st.form("quick_customer_form"):
+                    customer_name = st.text_input("Customer Name*", placeholder="e.g., John Smith")
+                    customer_company = st.text_input("Company Name", placeholder="e.g., ABC Corp")
+                    customer_email = st.text_input("Email*", placeholder="customer@company.com")
+                    customer_phone = st.text_input("Phone", placeholder="+1-555-123-4567")
+                    customer_address = st.text_input("Address", placeholder="123 Customer St")
+                    customer_city = st.text_input("City", placeholder="Los Angeles")
+                    customer_country = st.selectbox("Country", ["USA", "Canada", "UK", "Other"])
+                    customer_notes = st.text_area("Notes", placeholder="Additional customer information")
+                    
+                    if st.form_submit_button("Create Customer", type="primary"):
+                        if customer_name and customer_email:
+                            customer_data = {
+                                'name': customer_name,
+                                'company_name': customer_company or customer_name,
+                                'email': customer_email,
+                                'phone': customer_phone,
+                                'billing_address': customer_address,
+                                'city': customer_city,
+                                'country': customer_country,
+                                'notes': customer_notes
+                            }
+                            
+                            new_customer_id = save_new_customer(customer_data)
+                            if new_customer_id:
+                                st.success(f"✅ Customer created with ID: {new_customer_id}")
+                                st.rerun()
+                        else:
+                            st.error("Please enter customer name and email")
+        
+        # Service creation form
+        if show_service_creation:
+            with col2:
+                st.subheader("➕ Create Your First Service")
+                with st.form("quick_service_form"):
+                    service_name = st.text_input("Service Name*", placeholder="e.g., Software Development")
+                    service_description = st.text_area("Description*", placeholder="Detailed description of the service")
+                    service_price = st.number_input("Unit Price ($)*", min_value=0.01, step=0.01, format="%.2f")
+                    service_type = st.selectbox("Service Type", ["Service", "Product", "Consultation", "Development"])
+                    service_taxable = st.selectbox("Taxable", ["yes", "no"])
+                    
+                    if st.form_submit_button("Create Service", type="primary"):
+                        if service_name and service_description and service_price > 0:
+                            service_data = {
+                                'name': service_name,
+                                'description': service_description,
+                                'unit_price': service_price,
+                                'type': service_type,
+                                'taxable': service_taxable
+                            }
+                            
+                            new_service_name = save_new_service(service_data)
+                            if new_service_name:
+                                st.success(f"✅ Service created: {new_service_name}")
+                                st.rerun()
+                        else:
+                            st.error("Please fill in all required fields")
+        
+        # Stop here if missing data
+        if show_customer_creation or show_service_creation:
+            st.info("💡 After creating customers and services above, you'll be able to create invoices!")
+            return
     
     # Create tabs for different sections
     tab1, tab2, tab3 = st.tabs(["📋 View Invoices", "➕ Create Invoice", "🤖 AI Assistant"])
@@ -246,6 +384,97 @@ def show_invoices_page():
     
     with tab2:
         st.subheader("Create New Invoice")
+        
+        # Quick creation buttons
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            if st.button("➕ Quick Add Customer", help="Add a new customer without leaving this page"):
+                st.session_state.show_customer_quick_create = not st.session_state.get('show_customer_quick_create', False)
+        with col2:
+            if st.button("➕ Quick Add Service", help="Add a new service without leaving this page"):
+                st.session_state.show_service_quick_create = not st.session_state.get('show_service_quick_create', False)
+        
+        # Quick customer creation form
+        if st.session_state.get('show_customer_quick_create', False):
+            st.markdown("---")
+            st.subheader("➕ Quick Add Customer")
+            with st.form("quick_add_customer"):
+                qc_col1, qc_col2 = st.columns(2)
+                with qc_col1:
+                    qc_name = st.text_input("Customer Name*", placeholder="e.g., John Smith", key="qc_name")
+                    qc_email = st.text_input("Email*", placeholder="customer@company.com", key="qc_email")
+                    qc_city = st.text_input("City", placeholder="Los Angeles", key="qc_city")
+                with qc_col2:
+                    qc_company = st.text_input("Company Name", placeholder="e.g., ABC Corp", key="qc_company")
+                    qc_phone = st.text_input("Phone", placeholder="+1-555-123-4567", key="qc_phone")
+                    qc_country = st.selectbox("Country", ["USA", "Canada", "UK", "Other"], key="qc_country")
+                
+                qc_col3, qc_col4 = st.columns([3, 1])
+                with qc_col3:
+                    if st.form_submit_button("Create Customer", type="primary"):
+                        if qc_name and qc_email:
+                            customer_data = {
+                                'name': qc_name,
+                                'company_name': qc_company or qc_name,
+                                'email': qc_email,
+                                'phone': qc_phone,
+                                'billing_address': '',
+                                'city': qc_city,
+                                'country': qc_country,
+                                'notes': f'Quick-created customer on {datetime.now().strftime("%Y-%m-%d")}'
+                            }
+                            
+                            new_customer_id = save_new_customer(customer_data)
+                            if new_customer_id:
+                                st.success(f"✅ Customer created with ID: {new_customer_id}")
+                                st.session_state.show_customer_quick_create = False
+                                st.rerun()
+                        else:
+                            st.error("Please enter customer name and email")
+                with qc_col4:
+                    if st.form_submit_button("Cancel"):
+                        st.session_state.show_customer_quick_create = False
+                        st.rerun()
+        
+        # Quick service creation form
+        if st.session_state.get('show_service_quick_create', False):
+            st.markdown("---")
+            st.subheader("➕ Quick Add Service")
+            with st.form("quick_add_service"):
+                qs_col1, qs_col2 = st.columns(2)
+                with qs_col1:
+                    qs_name = st.text_input("Service Name*", placeholder="e.g., Software Development", key="qs_name")
+                    qs_description = st.text_area("Description*", placeholder="Detailed description of the service", key="qs_description")
+                with qs_col2:
+                    qs_price = st.number_input("Unit Price ($)*", min_value=0.01, step=0.01, format="%.2f", key="qs_price")
+                    qs_type = st.selectbox("Service Type", ["Service", "Product", "Consultation", "Development"], key="qs_type")
+                    qs_taxable = st.selectbox("Taxable", ["yes", "no"], key="qs_taxable")
+                
+                qs_col3, qs_col4 = st.columns([3, 1])
+                with qs_col3:
+                    if st.form_submit_button("Create Service", type="primary"):
+                        if qs_name and qs_description and qs_price > 0:
+                            service_data = {
+                                'name': qs_name,
+                                'description': qs_description,
+                                'unit_price': qs_price,
+                                'type': qs_type,
+                                'taxable': qs_taxable
+                            }
+                            
+                            new_service_name = save_new_service(service_data)
+                            if new_service_name:
+                                st.success(f"✅ Service created: {new_service_name}")
+                                st.session_state.show_service_quick_create = False
+                                st.rerun()
+                        else:
+                            st.error("Please fill in all required fields")
+                with qs_col4:
+                    if st.form_submit_button("Cancel"):
+                        st.session_state.show_service_quick_create = False
+                        st.rerun()
+        
+        st.markdown("---")
         
         with st.form("create_invoice_form"):
             col1, col2 = st.columns(2)
