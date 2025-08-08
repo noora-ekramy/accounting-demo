@@ -50,6 +50,148 @@ def load_onboarding_data() -> Optional[Dict]:
         return None
 
 
+def extract_financial_info(conversation_text, financial_data):
+    """Extract and structure financial information from conversation"""
+    try:
+        logger.info("Starting financial info extraction...")
+        model = get_gemini_model()
+        logger.info("Gemini model loaded successfully")
+        
+        # Get reporting date for dynamic prompts
+        reporting_date = financial_data.get("general_info", {}).get("reporting_date", "December 31, 2024")
+        
+        prompt = f"""
+        You are extracting financial information from a conversation. Look for company name, entity type, financial amounts, and dates.
+
+        CONVERSATION:
+        {conversation_text}
+
+        Find any of these and update the JSON structure:
+        - Company name (look for business names)
+        - Entity type (LLC, S-Corp, C-Corp, Partnership, Sole Proprietorship)
+        - Cash amounts (look for dollar amounts, cash mentions, multiple bank accounts, petty cash)
+        - Inventory details (value, type, cost method)
+        - Owner loans (loans to/from owner)
+        - Year-end accruals (unpaid wages, payroll taxes)
+        - Prior year earnings and distributions
+        - Any financial figures mentioned
+        - Dates mentioned for reporting
+
+        IMPORTANT: Do NOT modify business_questions if they are marked as locked.
+        IMPORTANT: Skip preferred_stock and treasury_stock unless specifically mentioned by user.
+        IMPORTANT: Use reporting date of {reporting_date} for all calculations and references.
+
+        Current data: {json.dumps(financial_data, indent=2)}
+
+        Return ONLY this JSON structure with any new information filled in:
+        {{
+            "general_info": {{
+                "company_name": "",
+                "entity_type": "",
+                "reporting_date": ""
+            }},
+            "business_questions": {{
+                "business_type": "",
+                "money_in": "",
+                "money_out": ""
+            }},
+            "assets": {{
+                "cash": "",
+                "accounts_receivable": "",
+                "inventory": "",
+                "prepaid_expenses": "",
+                "investments": "",
+                "property_plant_equipment": "",
+                "intangible_assets": "",
+                "other_assets": "",
+                "loans_to_owner": ""
+            }},
+            "liabilities": {{
+                "accounts_payable": "",
+                "short_term_loans": "",
+                "accrued_expenses": "",
+                "taxes_payable": "",
+                "long_term_debt": "",
+                "lease_obligations": "",
+                "other_liabilities": "",
+                "wages_payable": "",
+                "payroll_taxes_payable": "",
+                "loans_from_owner": ""
+            }},
+            "equity": {{
+                "common_stock": "",
+                "retained_earnings": "",
+                "additional_paid_in_capital": ""
+            }},
+            "inventory_details": {{
+                "type": "",
+                "cost_method": "",
+                "description": ""
+            }},
+            "owner_transactions": {{
+                "net_income_2024": "",
+                "distributions_taken": "",
+                "owner_loan_notes": ""
+            }}
+        }}
+        """
+        
+        logger.info(f"Sending prompt to Gemini API (length: {len(prompt)})")
+        response = model.generate_content(prompt)
+        logger.info(f"Received response from Gemini API")
+        
+        # Log successful extraction to terminal
+        logger.info("="*50)
+        logger.info("EXTRACTION SUCCESS:")
+        logger.info(f"AI Response: {response.text[:200]}...")
+        logger.info(f"Conversation length: {len(conversation_text)}")
+        
+        # Clean the response text to remove markdown code blocks
+        response_text = response.text.strip()
+        if response_text.startswith("```json"):
+            response_text = response_text[7:]  # Remove ```json
+        if response_text.endswith("```"):
+            response_text = response_text[:-3]  # Remove ```
+        response_text = response_text.strip()
+        
+        result = json.loads(response_text)
+        logger.info(f"Extracted data: {result}")
+        logger.info("="*50)
+        
+        return result
+        
+    except Exception as e:
+        # Log to terminal/console
+        error_msg = f"Error extracting financial info: {str(e)}"
+        if 'response' in locals() and hasattr(response, 'text'):
+            ai_response_msg = f"AI Response was: {response.text}"
+        elif 'response' in locals():
+            ai_response_msg = f"AI Response object: {response}"
+        else:
+            ai_response_msg = "No response received - API call failed"
+        
+        logger.error("="*50)
+        logger.error("EXTRACTION ERROR:")
+        logger.error(error_msg)
+        logger.error(ai_response_msg)
+        logger.error(f"Conversation text length: {len(conversation_text)}")
+        logger.error(f"Financial data: {financial_data}")
+        logger.error("="*50)
+        
+        # Also store in session state
+        if "extraction_errors" not in st.session_state:
+            st.session_state.extraction_errors = []
+        st.session_state.extraction_errors.append(f"{error_msg} | {ai_response_msg}")
+        
+        st.error(error_msg)
+        st.error(ai_response_msg)
+        
+        # Try simple text parsing as fallback
+        logger.info("Attempting fallback text extraction...")
+        fallback_data = simple_text_extraction(conversation_text, financial_data)
+        return fallback_data
+
+
 def generate_chart_of_accounts_with_ai(onboarding_data: Dict) -> List[Dict]:
     """
     Generate chart of accounts using Gemini AI based on onboarding data.
@@ -66,6 +208,9 @@ def generate_chart_of_accounts_with_ai(onboarding_data: Dict) -> List[Dict]:
         # Convert onboarding data to JSON string
         onboarding_json = json.dumps(onboarding_data, indent=2)
         
+        # Get reporting date
+        reporting_date = onboarding_data.get("general_info", {}).get("reporting_date", "December 31, 2024")
+        
         # Log the data being used for chart generation
         print("="*50)
         print("CHART OF ACCOUNTS GENERATION")
@@ -80,20 +225,37 @@ def generate_chart_of_accounts_with_ai(onboarding_data: Dict) -> List[Dict]:
         COMPLETE BUSINESS FINANCIAL DATA (JSON):
         {onboarding_json}
 
+        REPORTING DATE: {reporting_date}
+
         INSTRUCTIONS:
         Analyze ALL the provided financial data including:
-        - General company information (name, reporting date)
+        - General company information (name, entity type, reporting date)
         - Business questions (business type, revenue sources, expenses)
-        - Assets with amounts (cash, accounts receivable, inventory, etc.)
-        - Liabilities with amounts (accounts payable, loans, accrued expenses, etc.)
+        - Assets with amounts (cash, accounts receivable, inventory, loans to owner, etc.)
+        - Liabilities with amounts (accounts payable, loans, accrued expenses, wages payable, loans from owner, etc.)
         - Equity with amounts (stock, retained earnings, etc.)
+        - Inventory details (type, cost method)
+        - Owner transactions (net income, distributions)
 
         Create a comprehensive chart of accounts that includes:
         1. ALL Asset accounts mentioned in the data with their actual amounts
-        2. ALL Liability accounts mentioned in the data with their actual amounts
-        3. ALL Equity accounts mentioned in the data with their actual amounts
+        2. ALL Liability accounts mentioned in the data with their actual amounts (including wage/tax accruals)
+        3. ALL Equity accounts mentioned in the data with their actual amounts (SKIP preferred stock and treasury stock)
         4. Income accounts based on the revenue sources described
         5. Expense accounts based on the business expenses described
+
+        ENTITY TYPE CONSIDERATIONS:
+        - LLC: Use Member's Equity instead of Common Stock
+        - S-Corp/C-Corp: Use Common Stock and Retained Earnings
+        - Partnership: Use Partner's Equity accounts
+        - Sole Proprietorship: Use Owner's Equity
+
+        SPECIAL ACCOUNTS TO INCLUDE IF DATA EXISTS:
+        - Loans to Owner (Asset) - if business lent money to owner
+        - Loans from Owner (Liability) - if owner lent money to business
+        - Wages Payable (Liability) - for unpaid wages as of {reporting_date}
+        - Payroll Taxes Payable (Liability) - for unpaid payroll taxes
+        - Multiple cash accounts if indicated (checking, savings, petty cash)
 
         BALANCE INSTRUCTIONS:
         - Use the ACTUAL amounts provided in the financial data for current_balance
@@ -132,6 +294,10 @@ def generate_chart_of_accounts_with_ai(onboarding_data: Dict) -> List[Dict]:
         - Reference the actual business name and specific revenue/expense sources
         - Write detailed descriptions that incorporate the real financial data
         - Ensure all dollar amounts are converted to decimal numbers
+        - Adjust equity accounts based on entity type (LLC, Corp, Partnership, etc.)
+        - DO NOT include preferred stock or treasury stock accounts
+        - Include owner loan accounts if indicated in the data
+        - Include wage/tax accrual accounts if indicated in the data
 
         Generate the comprehensive chart of accounts with actual balances now:
         """
@@ -158,13 +324,13 @@ def generate_chart_of_accounts_with_ai(onboarding_data: Dict) -> List[Dict]:
             
         except (json.JSONDecodeError, ValueError) as e:
             print(f"Error parsing AI response: {e}")
-            # Return default accounts if AI parsing fails
-            return create_sample_accounts()
+            # Return enhanced default accounts if AI parsing fails
+            return create_enhanced_sample_accounts()
             
     except Exception as e:
         print(f"Error generating accounts with AI: {e}")
-        # Return default accounts if AI fails
-        return create_sample_accounts()
+        # Return enhanced default accounts if AI fails
+        return create_enhanced_sample_accounts()
 
 
 def setup_chart_of_accounts(onboarding_data: Dict) -> bool:
@@ -676,6 +842,36 @@ def create_sample_accounts() -> List[Dict]:
         {"name": "Sales Revenue", "account_type": "Income", "account_sub_type": "Operating Income", "description": "Revenue from primary business operations", "current_balance": 0.0},
         {"name": "Office Expenses", "account_type": "Expense", "account_sub_type": "Operating Expense", "description": "General office supplies and expenses", "current_balance": 0.0},
         {"name": "Accounts Payable", "account_type": "Liability", "account_sub_type": "Current Liability", "description": "Money owed to vendors and suppliers", "current_balance": 0.0},
+        {"name": "Common Stock", "account_type": "Equity", "account_sub_type": "Stockholders Equity", "description": "Value of common stock issued to shareholders", "current_balance": 0.0},
+        {"name": "Retained Earnings", "account_type": "Equity", "account_sub_type": "Stockholders Equity", "description": "Accumulated profits retained in the business", "current_balance": 0.0},
+    ]
+    return sample_accounts
+
+
+def create_enhanced_sample_accounts() -> List[Dict]:
+    """
+    Create enhanced sample chart of accounts entries with new account types.
+    
+    Returns:
+        List[Dict]: Enhanced sample account data
+    """
+    sample_accounts = [
+        {"name": "Checking Account", "account_type": "Asset", "account_sub_type": "Current Asset", "description": "Primary business checking account for daily operations", "current_balance": 0.0},
+        {"name": "Savings Account", "account_type": "Asset", "account_sub_type": "Current Asset", "description": "Business savings account for reserves", "current_balance": 0.0},
+        {"name": "Petty Cash", "account_type": "Asset", "account_sub_type": "Current Asset", "description": "Small cash fund for minor expenses", "current_balance": 0.0},
+        {"name": "Accounts Receivable", "account_type": "Asset", "account_sub_type": "Current Asset", "description": "Money owed by customers for goods or services", "current_balance": 0.0},
+        {"name": "Inventory", "account_type": "Asset", "account_sub_type": "Current Asset", "description": "Value of goods held for sale", "current_balance": 0.0},
+        {"name": "Loans to Owner", "account_type": "Asset", "account_sub_type": "Other Asset", "description": "Money lent by business to owner", "current_balance": 0.0},
+        {"name": "Accounts Payable", "account_type": "Liability", "account_sub_type": "Current Liability", "description": "Money owed to vendors and suppliers", "current_balance": 0.0},
+        {"name": "Wages Payable", "account_type": "Liability", "account_sub_type": "Current Liability", "description": "Unpaid wages owed to employees", "current_balance": 0.0},
+        {"name": "Payroll Taxes Payable", "account_type": "Liability", "account_sub_type": "Current Liability", "description": "Unpaid payroll taxes owed to government", "current_balance": 0.0},
+        {"name": "Loans from Owner", "account_type": "Liability", "account_sub_type": "Long-term Liability", "description": "Money borrowed from owner", "current_balance": 0.0},
+        {"name": "Common Stock", "account_type": "Equity", "account_sub_type": "Stockholders Equity", "description": "Value of common stock issued to shareholders", "current_balance": 0.0},
+        {"name": "Retained Earnings", "account_type": "Equity", "account_sub_type": "Stockholders Equity", "description": "Accumulated profits retained in the business", "current_balance": 0.0},
+        {"name": "Sales Revenue", "account_type": "Income", "account_sub_type": "Operating Income", "description": "Revenue from primary business operations", "current_balance": 0.0},
+        {"name": "Office Expenses", "account_type": "Expense", "account_sub_type": "Operating Expense", "description": "General office supplies and expenses", "current_balance": 0.0},
+        {"name": "Wage Expense", "account_type": "Expense", "account_sub_type": "Operating Expense", "description": "Employee wages and salaries", "current_balance": 0.0},
+        {"name": "Payroll Tax Expense", "account_type": "Expense", "account_sub_type": "Operating Expense", "description": "Employer payroll taxes", "current_balance": 0.0},
     ]
     return sample_accounts
 

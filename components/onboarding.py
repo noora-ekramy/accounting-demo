@@ -3,6 +3,7 @@ import json
 import time
 import os
 import logging
+import pandas as pd
 from setup_logic import get_gemini_model
 
 # Set up logging to console
@@ -51,6 +52,9 @@ def get_ai_response(user_message, chat_history, current_stage, financial_data):
     try:
         model = get_gemini_model()
         
+        # Get reporting date for dynamic prompts
+        reporting_date = financial_data.get("general_info", {}).get("reporting_date", "December 31, 2024")
+        
         # Build context based on current stage and collected data
         context = f"""
 You are an expert accounting assistant helping to collect comprehensive financial information for a company's balance sheet setup.
@@ -62,33 +66,48 @@ INFORMATION TO COLLECT:
 
 1. GENERAL INFO:
    - Company Name
+   - Entity Type (LLC, S-Corp, C-Corp, Partnership, Sole Proprietorship)
    - Reporting Date
 
 2. ASSETS:
-   - Cash
-   - Accounts Receivable
-   - Inventory
+   - Cash (ask for all bank accounts + petty cash as of {reporting_date})
+   - Accounts Receivable (help estimate using January payments received)
+   - Inventory (value, type: raw materials/finished goods, cost method: FIFO/Average)
    - Prepaid Expenses
    - Investments
-   - Property, Plant & Equipment (PP&E)
+   - Property, Plant & Equipment (ask purchase date, cost, and if financed)
    - Intangible Assets (Patents, Trademarks)
    - Other Assets
 
 3. LIABILITIES:
-   - Accounts Payable
+   - Accounts Payable (help estimate using January vendor payments made)
    - Short-term Loans
-   - Accrued Expenses
+   - Accrued Expenses (unpaid wages, taxes, year-end accruals)
+   - Wages Payable (any unpaid payroll as of {reporting_date})
+   - Payroll Taxes Payable (unpaid employment taxes)
    - Taxes Payable
-   - Long-term Debt
+   - Long-term Debt (ask outstanding amounts as of {reporting_date})
+   - Loans from Owner (did owner lend money to business?)
    - Lease Obligations
    - Other Liabilities
 
 4. EQUITY:
    - Common Stock
-   - Preferred Stock
-   - Retained Earnings
+   - Retained Earnings (calculate from prior net income minus distributions)
    - Additional Paid-in Capital
-   - Treasury Stock
+   - Loans to Owner (did business lend money to owner?)
+   - NOTE: Skip Preferred Stock and Treasury Stock unless specifically mentioned
+
+IMPROVED PROMPTS:
+- For Cash: "What was the total cash on hand as of {reporting_date}? Include all bank accounts and petty cash."
+- For AR: "Did customers owe you money at year-end? If unsure, how much did customers pay you in early January?"
+- For AP: "Did you owe vendors money at year-end? If unsure, how much did you pay vendors in early January?"
+- For PP&E: "Do you own equipment, vehicles, or property? When purchased? Cost? Any loans against it?"
+- For Entity Type: "What type of business entity are you? (LLC, S-Corp, C-Corp, Partnership, Sole Proprietorship)"
+- For Inventory: "Did you have unsold goods or materials at year-end? What type (raw materials/finished goods)? What value?"
+- For Owner Loans: "Did you lend money to the business, or did the business lend money to you?"
+- For Unpaid Payroll: "Were any wages or payroll taxes unpaid as of {reporting_date}?"
+- For Prior Year Earnings: "What was your net income (profit) for the year? Did you take any distributions or dividends?"
 
 INSTRUCTIONS:
 - Ask ONE question at a time
@@ -96,6 +115,8 @@ INSTRUCTIONS:
 - Guide the user through each category systematically
 - Ask for specific dollar amounts when appropriate
 - Clarify if user says "none" or "zero" for any item
+- Skip Preferred Stock and Treasury Stock unless user mentions them
+- Use the actual reporting date ({reporting_date}) in all prompts
 - Move to next category when current one is complete
 - When ALL information is collected, say "COLLECTION_COMPLETE" and provide a summary
 - DO NOT use emojis in your responses - keep all text clean and professional
@@ -338,11 +359,14 @@ def display_chat_interface(completed_fields=0, business_questions_complete=False
     st.title("Financial Information Chat")
     st.markdown("---")
     
+    # Get reporting date for dynamic display
+    reporting_date = st.session_state.financial_data.get("general_info", {}).get("reporting_date", "December 31, 2024")
+    
     # Display progress information
     st.subheader("Collection Progress")
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Completed Fields", f"{completed_fields}/25")
+        st.metric("Completed Fields", f"{completed_fields}/25")  # Increased due to new fields
     with col2:
         completion_rate = (completed_fields / 25) * 100
         st.metric("Progress", f"{completion_rate:.1f}%")
@@ -446,6 +470,48 @@ def display_chat_interface(completed_fields=0, business_questions_complete=False
     
     st.markdown("---")
     
+    # Enhanced Helper Tools
+    st.subheader("Quick Helper Tools")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown(f"**Cash & Bank Accounts (as of {reporting_date})**")
+        with st.expander("Add Cash Accounts", expanded=False):
+            show_cash_accounts_helper(reporting_date)
+    
+    with col2:
+        st.markdown("**Accounts Receivable Estimation**")
+        with st.expander("Choose AR Method", expanded=False):
+            show_ar_estimation_helper()
+    
+    col3, col4 = st.columns(2)
+    
+    with col3:
+        st.markdown("**Inventory Helper**")
+        with st.expander("Inventory Details", expanded=False):
+            show_inventory_helper(reporting_date)
+    
+    with col4:
+        st.markdown("**Owner Transactions**")
+        with st.expander("Owner Loans & Distributions", expanded=False):
+            show_owner_transactions_helper()
+    
+    # Additional helpers row
+    col5, col6 = st.columns(2)
+    
+    with col5:
+        st.markdown("**Year-End Accruals**")
+        with st.expander("Unpaid Wages & Taxes", expanded=False):
+            show_accruals_helper(reporting_date)
+    
+    with col6:
+        st.markdown("**Balance Check**")
+        if st.button("Check Balance Sheet"):
+            check_balance_sheet()
+    
+    st.markdown("---")
+    
     # AI Chat section - only enabled if business questions are complete
     if business_questions_complete:
         st.subheader("AI-Guided Financial Data Collection")
@@ -509,7 +575,79 @@ def display_chat_interface(completed_fields=0, business_questions_complete=False
     }
     </style>
     """, unsafe_allow_html=True)
-    
+
+def check_balance_sheet():
+    """Check if balance sheet balances and suggest adjustments"""
+    try:
+        financial_data = st.session_state.financial_data
+        
+        # Calculate totals
+        assets_total = 0
+        liabilities_total = 0
+        equity_total = 0
+        
+        # Sum assets
+        for value in financial_data.get("assets", {}).values():
+            if value and str(value).strip():
+                try:
+                    # Clean and convert to float
+                    clean_value = str(value).replace("$", "").replace(",", "").strip()
+                    if clean_value:
+                        assets_total += float(clean_value)
+                except:
+                    pass
+        
+        # Sum liabilities
+        for value in financial_data.get("liabilities", {}).values():
+            if value and str(value).strip():
+                try:
+                    clean_value = str(value).replace("$", "").replace(",", "").strip()
+                    if clean_value:
+                        liabilities_total += float(clean_value)
+                except:
+                    pass
+        
+        # Sum equity
+        for value in financial_data.get("equity", {}).values():
+            if value and str(value).strip():
+                try:
+                    clean_value = str(value).replace("$", "").replace(",", "").strip()
+                    if clean_value:
+                        equity_total += float(clean_value)
+                except:
+                    pass
+        
+        # Check balance
+        liab_plus_equity = liabilities_total + equity_total
+        difference = assets_total - liab_plus_equity
+        
+        if abs(difference) < 0.01:  # Balanced (allow for rounding)
+            st.success(f"Balance Sheet is balanced! Assets = Liabilities + Equity (${assets_total:,.2f})")
+        else:
+            st.warning(f"Balance Sheet is out of balance by ${abs(difference):,.2f}")
+            st.write(f"**Assets:** ${assets_total:,.2f}")
+            st.write(f"**Liabilities:** ${liabilities_total:,.2f}")
+            st.write(f"**Equity:** ${equity_total:,.2f}")
+            st.write(f"**Liabilities + Equity:** ${liab_plus_equity:,.2f}")
+            
+            if st.button("Auto-adjust Retained Earnings"):
+                # Adjust retained earnings to balance
+                current_retained = 0
+                if financial_data.get("equity", {}).get("retained_earnings"):
+                    try:
+                        current_retained = float(str(financial_data["equity"]["retained_earnings"]).replace("$", "").replace(",", ""))
+                    except:
+                        pass
+                
+                new_retained = current_retained + difference
+                st.session_state.financial_data.setdefault("equity", {})["retained_earnings"] = str(int(new_retained))
+                save_financial_data_incremental()
+                st.success(f"Retained Earnings adjusted to ${new_retained:,.2f} to balance the books!")
+                st.rerun()
+                
+    except Exception as e:
+        st.error(f"Error checking balance: {e}")
+
 def display_chat_messages():
     """Display the actual chat interface"""
     # Chat container
@@ -697,11 +835,9 @@ def display_collected_data():
     col1, col2 = st.columns(2)
     with col1:
         st.write(f"**Common Stock:** {equity.get('common_stock', 'Not provided')}")
-        st.write(f"**Preferred Stock:** {equity.get('preferred_stock', 'Not provided')}")
         st.write(f"**Retained Earnings:** {equity.get('retained_earnings', 'Not provided')}")
     with col2:
         st.write(f"**Additional Paid-in Capital:** {equity.get('additional_paid_in_capital', 'Not provided')}")
-        st.write(f"**Treasury Stock:** {equity.get('treasury_stock', 'Not provided')}")
     
     # Action buttons
     st.markdown("---")
@@ -722,7 +858,7 @@ def count_completed_fields(financial_data):
     """Count completed fields in financial data"""
     count = 0
     
-    # Count general_info fields (2 fields)
+    # Count general_info fields (3 fields: name, entity_type, reporting_date)
     general_info = financial_data.get("general_info", {})
     for value in general_info.values():
         if value and str(value).strip():
@@ -734,22 +870,28 @@ def count_completed_fields(financial_data):
         if key != "locked" and value and str(value).strip():
             count += 1
     
-    # Count assets fields (8 fields)
+    # Count assets fields (10 fields - added loans_to_owner, inventory_details)
     assets = financial_data.get("assets", {})
-    for value in assets.values():
-        if value and str(value).strip():
+    asset_fields = ["cash", "accounts_receivable", "inventory", "prepaid_expenses", "investments", 
+                   "property_plant_equipment", "intangible_assets", "other_assets", "loans_to_owner"]
+    for field in asset_fields:
+        if assets.get(field) and str(assets[field]).strip():
             count += 1
     
-    # Count liabilities fields (7 fields)
+    # Count liabilities fields (9 fields - added wages_payable, payroll_taxes_payable, loans_from_owner)
     liabilities = financial_data.get("liabilities", {})
-    for value in liabilities.values():
-        if value and str(value).strip():
+    liability_fields = ["accounts_payable", "short_term_loans", "accrued_expenses", "taxes_payable", 
+                       "long_term_debt", "lease_obligations", "other_liabilities", "wages_payable", 
+                       "payroll_taxes_payable", "loans_from_owner"]
+    for field in liability_fields:
+        if liabilities.get(field) and str(liabilities[field]).strip():
             count += 1
     
-    # Count equity fields (5 fields)
+    # Count equity fields (3 fields: common_stock, retained_earnings, additional_paid_in_capital)
     equity = financial_data.get("equity", {})
-    for value in equity.values():
-        if value and str(value).strip():
+    required_equity_fields = ["common_stock", "retained_earnings", "additional_paid_in_capital"]
+    for field in required_equity_fields:
+        if equity.get(field) and str(equity[field]).strip():
             count += 1
     
     return count
@@ -766,6 +908,190 @@ def check_business_questions_complete(financial_data):
     
     # Check if they are locked (saved)
     return business_questions.get("locked", False)
+
+def show_cash_accounts_helper(reporting_date):
+    """Helper for multiple cash accounts"""
+    st.markdown(f"**Add all cash accounts as of {reporting_date}:**")
+    
+    if "cash_accounts" not in st.session_state:
+        st.session_state.cash_accounts = []
+    
+    # Add new cash account
+    with st.form("add_cash_account"):
+        col1, col2 = st.columns(2)
+        with col1:
+            account_name = st.text_input("Account Name:", placeholder="e.g., Main Checking, Petty Cash")
+        with col2:
+            balance = st.number_input("Balance ($):", min_value=0.0, format="%.2f")
+        
+        if st.form_submit_button("Add Cash Account"):
+            if account_name and balance > 0:
+                st.session_state.cash_accounts.append({"name": account_name, "balance": balance})
+                st.success(f"Added {account_name}: ${balance:,.2f}")
+    
+    # Show existing accounts
+    if st.session_state.cash_accounts:
+        st.markdown("**Your Cash Accounts:**")
+        total_cash = 0
+        for i, account in enumerate(st.session_state.cash_accounts):
+            col1, col2, col3 = st.columns([3, 2, 1])
+            with col1:
+                st.write(f"**{account['name']}**")
+            with col2:
+                st.write(f"${account['balance']:,.2f}")
+            with col3:
+                if st.button("Remove", key=f"remove_cash_{i}"):
+                    st.session_state.cash_accounts.pop(i)
+                    st.rerun()
+            total_cash += account['balance']
+        
+        st.metric("Total Cash", f"${total_cash:,.2f}")
+        
+        if st.button("Set as Cash Amount"):
+            st.session_state.financial_data.setdefault("assets", {})["cash"] = str(int(total_cash))
+            save_financial_data_incremental()
+            st.success(f"Total cash set to ${total_cash:,.2f}")
+
+def show_ar_estimation_helper():
+    """Three-path AR estimation helper"""
+    st.markdown("**Choose your preferred method:**")
+    
+    method = st.radio("AR Estimation Method:", 
+                     ["Manual Input", "January Payments Estimate", "Software/Invoice Upload"],
+                     key="ar_method")
+    
+    if method == "Manual Input":
+        ar_amount = st.number_input("Enter AR amount directly:", min_value=0.0, format="%.2f", key="ar_manual")
+        if st.button("Set AR Amount") and ar_amount > 0:
+            st.session_state.financial_data.setdefault("assets", {})["accounts_receivable"] = str(int(ar_amount))
+            save_financial_data_incremental()
+            st.success(f"A/R set to ${ar_amount:,.2f}")
+    
+    elif method == "January Payments Estimate":
+        jan_payments = st.number_input("Customer payments Jan 1-15, 2025:", min_value=0.0, format="%.2f", key="ar_jan")
+        if st.button("Estimate A/R") and jan_payments > 0:
+            st.session_state.financial_data.setdefault("assets", {})["accounts_receivable"] = str(int(jan_payments))
+            save_financial_data_incremental()
+            st.success(f"A/R estimated at ${jan_payments:,.2f}")
+    
+    else:  # Software/Invoice Upload
+        uploaded_file = st.file_uploader("Upload customer aging or invoice file:", type=['csv', 'xlsx'], key="ar_upload")
+        if uploaded_file:
+            try:
+                df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
+                st.dataframe(df.head())
+                
+                # Try to find amount column
+                amount_cols = [col for col in df.columns if any(word in col.lower() for word in ['amount', 'balance', 'total', 'due'])]
+                if amount_cols:
+                    total_ar = df[amount_cols[0]].sum()
+                    st.success(f"Found total AR: ${total_ar:,.2f}")
+                    if st.button("Import AR Amount"):
+                        st.session_state.financial_data.setdefault("assets", {})["accounts_receivable"] = str(int(total_ar))
+                        save_financial_data_incremental()
+                        st.success("A/R imported successfully!")
+            except Exception as e:
+                st.error(f"Error processing file: {e}")
+
+def show_inventory_helper(reporting_date):
+    """Inventory details helper"""
+    st.markdown(f"**Inventory as of {reporting_date}:**")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        inv_value = st.number_input("Inventory Value ($):", min_value=0.0, format="%.2f", key="inv_value")
+        inv_type = st.selectbox("Inventory Type:", ["Raw Materials", "Finished Goods", "Work in Process", "Mixed"], key="inv_type")
+    
+    with col2:
+        cost_method = st.selectbox("Cost Method:", ["FIFO", "Average Cost", "LIFO", "Specific Identification"], key="inv_method")
+        inv_description = st.text_area("Description:", placeholder="Describe your inventory...", key="inv_desc")
+    
+    if st.button("Set Inventory") and inv_value > 0:
+        inventory_data = {
+            "value": inv_value,
+            "type": inv_type,
+            "cost_method": cost_method,
+            "description": inv_description
+        }
+        st.session_state.financial_data.setdefault("assets", {})["inventory"] = str(int(inv_value))
+        st.session_state.financial_data.setdefault("inventory_details", {}).update(inventory_data)
+        save_financial_data_incremental()
+        st.success(f"Inventory set: ${inv_value:,.2f} ({inv_type}, {cost_method})")
+
+def show_owner_transactions_helper():
+    """Owner loans and distributions helper"""
+    st.markdown("**Owner Financial Transactions:**")
+    
+    # Prior year earnings
+    st.markdown("**Prior Year Earnings & Distributions:**")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        net_income_2024 = st.number_input("Net Income for 2024 ($):", format="%.2f", key="net_income")
+    with col2:
+        distributions = st.number_input("Distributions/Dividends taken ($):", min_value=0.0, format="%.2f", key="distributions")
+    
+    if net_income_2024 != 0 or distributions > 0:
+        retained_earnings = net_income_2024 - distributions
+        st.metric("Calculated Retained Earnings", f"${retained_earnings:,.2f}")
+        
+        if st.button("Set Retained Earnings"):
+            st.session_state.financial_data.setdefault("equity", {})["retained_earnings"] = str(int(retained_earnings))
+            save_financial_data_incremental()
+            st.success(f"Retained Earnings set to ${retained_earnings:,.2f}")
+    
+    st.markdown("---")
+    
+    # Owner loans
+    st.markdown("**Owner Loans:**")
+    loan_direction = st.radio("Loan Direction:", 
+                            ["Business owes Owner (Liability)", "Owner owes Business (Asset)", "No loans"], 
+                            key="owner_loan_direction")
+    
+    if loan_direction != "No loans":
+        loan_amount = st.number_input("Loan Amount ($):", min_value=0.0, format="%.2f", key="owner_loan_amount")
+        
+        if st.button("Set Owner Loan") and loan_amount > 0:
+            if "Business owes Owner" in loan_direction:
+                st.session_state.financial_data.setdefault("liabilities", {})["loans_from_owner"] = str(int(loan_amount))
+                st.success(f"Added liability: Loans from Owner ${loan_amount:,.2f}")
+            else:
+                st.session_state.financial_data.setdefault("assets", {})["loans_to_owner"] = str(int(loan_amount))
+                st.success(f"Added asset: Loans to Owner ${loan_amount:,.2f}")
+            save_financial_data_incremental()
+
+def show_accruals_helper(reporting_date):
+    """Year-end accruals helper"""
+    st.markdown(f"**Unpaid amounts as of {reporting_date}:**")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        unpaid_wages = st.number_input("Unpaid Wages ($):", min_value=0.0, format="%.2f", key="unpaid_wages")
+        unpaid_payroll_tax = st.number_input("Unpaid Payroll Taxes ($):", min_value=0.0, format="%.2f", key="unpaid_tax")
+    
+    with col2:
+        unpaid_other = st.number_input("Other Unpaid Expenses ($):", min_value=0.0, format="%.2f", key="unpaid_other")
+        accrual_description = st.text_area("Description:", placeholder="Describe accrued expenses...", key="accrual_desc")
+    
+    total_accruals = unpaid_wages + unpaid_payroll_tax + unpaid_other
+    
+    if total_accruals > 0:
+        st.metric("Total Accrued Expenses", f"${total_accruals:,.2f}")
+        
+        if st.button("Set Accrued Expenses"):
+            liabilities = st.session_state.financial_data.setdefault("liabilities", {})
+            if unpaid_wages > 0:
+                liabilities["wages_payable"] = str(int(unpaid_wages))
+            if unpaid_payroll_tax > 0:
+                liabilities["payroll_taxes_payable"] = str(int(unpaid_payroll_tax))
+            if unpaid_other > 0:
+                current_accrued = float(liabilities.get("accrued_expenses", 0))
+                liabilities["accrued_expenses"] = str(int(current_accrued + unpaid_other))
+            
+            save_financial_data_incremental()
+            st.success(f"Added accrued expenses totaling ${total_accruals:,.2f}")
 
 def show_onboarding_page():
     """Main onboarding page function"""
