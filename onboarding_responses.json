@@ -1,0 +1,29 @@
+{
+  "general_info": {},
+  "business_questions": {
+    "business_type": "zz",
+    "money_in": "zz",
+    "money_out": "zz",
+    "locked": true
+  },
+  "assets": {
+    "inventory": "3440",
+    "loans_to_owner": "340",
+    "accounts_receivable": "43430"
+  },
+  "liabilities": {
+    "wages_payable": "0",
+    "payroll_taxes_payable": "340",
+    "accrued_expenses": "3400"
+  },
+  "equity": {},
+  "completed": false,
+  "timestamp": "2025-08-08 19:34:04",
+  "last_updated": "2025-08-08 19:34:04",
+  "inventory_details": {
+    "value": 3440.0,
+    "type": "Raw Materials",
+    "cost_method": "FIFO",
+    "description": ""
+  }
+}

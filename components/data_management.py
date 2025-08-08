@@ -17,6 +17,12 @@ def show_data_management_page():
     
     st.markdown("---")
     
+    # Helper Tools Data Section
+    st.subheader("Quick Helper Tools Data")
+    show_helper_tools_data()
+    
+    st.markdown("---")
+    
     # Data Import/Export Section
     st.subheader("Data Import/Export")
     
@@ -53,6 +59,7 @@ def show_data_management_page():
         st.write("- **Bank transaction data** (anonymized_data/bank_transactions.csv)")
         st.write("- **Fixed assets data** (anonymized_data/fixed_assets.csv)")
         st.write("- **All session data** and temporary files")
+        st.write("- **Helper tools detailed data** (cash accounts, AR details, etc.)")
     
     st.markdown("---")
     
@@ -245,6 +252,72 @@ def export_financial_data():
             if value:
                 export_data.append({"Category": "Equity", "Field": key.replace("_", " ").title(), "Value": value})
         
+        # Add detailed helper tools data
+        if "cash_accounts_details" in financial_data:
+            for i, account in enumerate(financial_data["cash_accounts_details"]):
+                export_data.append({
+                    "Category": "Cash Accounts", 
+                    "Field": f"Account {i+1}: {account['name']}", 
+                    "Value": f"${account['balance']:,.2f} (Added: {account.get('date_added', 'N/A')})"
+                })
+        
+        if "ar_estimation_details" in financial_data:
+            ar_details = financial_data["ar_estimation_details"]
+            export_data.append({
+                "Category": "AR Estimation", 
+                "Field": "Method", 
+                "Value": ar_details.get('method', 'N/A')
+            })
+            export_data.append({
+                "Category": "AR Estimation", 
+                "Field": "Amount", 
+                "Value": f"${ar_details.get('amount', ar_details.get('total_amount', 0)):,.2f}"
+            })
+            if ar_details.get('january_payments'):
+                export_data.append({
+                    "Category": "AR Estimation", 
+                    "Field": "January Payments", 
+                    "Value": f"${ar_details['january_payments']:,.2f}"
+                })
+        
+        if "inventory_details" in financial_data:
+            inv_details = financial_data["inventory_details"]
+            export_data.append({
+                "Category": "Inventory Details", 
+                "Field": "Type", 
+                "Value": inv_details.get('type', 'N/A')
+            })
+            export_data.append({
+                "Category": "Inventory Details", 
+                "Field": "Cost Method", 
+                "Value": inv_details.get('cost_method', 'N/A')
+            })
+            export_data.append({
+                "Category": "Inventory Details", 
+                "Field": "Value", 
+                "Value": f"${inv_details.get('value', 0):,.2f}"
+            })
+        
+        if "owner_transactions" in financial_data:
+            owner_data = financial_data["owner_transactions"]
+            for key, value in owner_data.items():
+                if key != "loan_details" and value is not None:
+                    export_data.append({
+                        "Category": "Owner Transactions", 
+                        "Field": key.replace("_", " ").title(), 
+                        "Value": f"${value:,.2f}" if isinstance(value, (int, float)) else str(value)
+                    })
+        
+        if "accrual_details" in financial_data:
+            accrual_data = financial_data["accrual_details"]
+            for key, value in accrual_data.items():
+                if key not in ["description", "date_set", "reporting_date"] and value:
+                    export_data.append({
+                        "Category": "Accruals", 
+                        "Field": key.replace("_", " ").title(), 
+                        "Value": f"${value:,.2f}" if isinstance(value, (int, float)) else str(value)
+                    })
+        
         # Convert to DataFrame and display
         if export_data:
             df = pd.DataFrame(export_data)
@@ -253,12 +326,12 @@ def export_financial_data():
             # Convert to CSV for download
             csv = df.to_csv(index=False)
             st.download_button(
-                label="Download CSV",
+                label="Download Complete Financial Data CSV",
                 data=csv,
-                file_name="financial_data_export.csv",
+                file_name="complete_financial_data_export.csv",
                 mime="text/csv"
             )
-            st.success("Financial data ready for download!")
+            st.success("Complete financial data with helper tools details ready for download!")
         else:
             st.warning("No data available to export.")
             
@@ -301,3 +374,100 @@ def show_data_summary():
             
     except Exception as e:
         st.error(f"Error loading data summary: {e}") 
+
+def show_helper_tools_data():
+    """Display detailed data from helper tools"""
+    if not os.path.exists("onboarding_responses.json"):
+        st.info("No helper tools data found. Complete onboarding to see detailed data.")
+        return
+    
+    try:
+        with open("onboarding_responses.json", 'r') as f:
+            financial_data = json.load(f)
+        
+        # Show cash accounts details
+        if "cash_accounts_details" in financial_data and financial_data["cash_accounts_details"]:
+            st.markdown("**Cash Accounts Breakdown:**")
+            cash_df = pd.DataFrame(financial_data["cash_accounts_details"])
+            st.dataframe(cash_df, use_container_width=True)
+            
+            total_cash = sum(acc["balance"] for acc in financial_data["cash_accounts_details"])
+            st.metric("Total Cash from Accounts", f"${total_cash:,.2f}")
+        
+        # Show AR estimation details
+        if "ar_estimation_details" in financial_data:
+            st.markdown("**Accounts Receivable Estimation Details:**")
+            ar_details = financial_data["ar_estimation_details"]
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write(f"**Method Used:** {ar_details.get('method', 'N/A')}")
+                st.write(f"**Date Set:** {ar_details.get('date_set', 'N/A')}")
+            with col2:
+                if ar_details.get('method') == 'January Payments Estimate':
+                    st.write(f"**January Payments:** ${ar_details.get('january_payments', 0):,.2f}")
+                elif ar_details.get('method') == 'Software/Invoice Upload':
+                    st.write(f"**File:** {ar_details.get('filename', 'N/A')}")
+                    st.write(f"**Records:** {ar_details.get('records_count', 0)}")
+                st.write(f"**Amount:** ${ar_details.get('amount', ar_details.get('total_amount', 0)):,.2f}")
+        
+        # Show inventory details
+        if "inventory_details" in financial_data:
+            st.markdown("**Inventory Details:**")
+            inv_details = financial_data["inventory_details"]
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write(f"**Type:** {inv_details.get('type', 'N/A')}")
+                st.write(f"**Cost Method:** {inv_details.get('cost_method', 'N/A')}")
+            with col2:
+                st.write(f"**Value:** ${inv_details.get('value', 0):,.2f}")
+                st.write(f"**Date Set:** {inv_details.get('date_set', 'N/A')}")
+            
+            if inv_details.get('description'):
+                st.write(f"**Description:** {inv_details['description']}")
+        
+        # Show owner transactions
+        if "owner_transactions" in financial_data:
+            st.markdown("**Owner Transactions:**")
+            owner_data = financial_data["owner_transactions"]
+            
+            if "net_income_2024" in owner_data:
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Net Income 2024", f"${owner_data.get('net_income_2024', 0):,.2f}")
+                with col2:
+                    st.metric("Distributions", f"${owner_data.get('distributions_taken', 0):,.2f}")
+                with col3:
+                    st.metric("Retained Earnings", f"${owner_data.get('calculated_retained_earnings', 0):,.2f}")
+            
+            if "loan_details" in owner_data:
+                loan_info = owner_data["loan_details"]
+                st.write(f"**Loan Direction:** {loan_info.get('direction', 'N/A')}")
+                st.write(f"**Loan Amount:** ${loan_info.get('amount', 0):,.2f}")
+                if loan_info.get('notes'):
+                    st.write(f"**Notes:** {loan_info['notes']}")
+        
+        # Show accrual details
+        if "accrual_details" in financial_data:
+            st.markdown("**Year-End Accruals:**")
+            accrual_data = financial_data["accrual_details"]
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Unpaid Wages", f"${accrual_data.get('unpaid_wages', 0):,.2f}")
+            with col2:
+                st.metric("Unpaid Payroll Tax", f"${accrual_data.get('unpaid_payroll_tax', 0):,.2f}")
+            with col3:
+                st.metric("Other Unpaid", f"${accrual_data.get('unpaid_other', 0):,.2f}")
+            
+            st.metric("Total Accruals", f"${accrual_data.get('total_accruals', 0):,.2f}")
+            
+            if accrual_data.get('description'):
+                st.write(f"**Description:** {accrual_data['description']}")
+        
+        if not any(key in financial_data for key in ['cash_accounts_details', 'ar_estimation_details', 'inventory_details', 'owner_transactions', 'accrual_details']):
+            st.info("No detailed helper tools data found. Use the Quick Helper Tools in onboarding to generate detailed data.")
+    
+    except Exception as e:
+        st.error(f"Error loading helper tools data: {e}") 

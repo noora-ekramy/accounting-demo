@@ -913,8 +913,10 @@ def show_cash_accounts_helper(reporting_date):
     """Helper for multiple cash accounts"""
     st.markdown(f"**Add all cash accounts as of {reporting_date}:**")
     
+    # Load existing cash accounts from financial data if available
     if "cash_accounts" not in st.session_state:
-        st.session_state.cash_accounts = []
+        existing_cash_accounts = st.session_state.financial_data.get("cash_accounts_details", [])
+        st.session_state.cash_accounts = existing_cash_accounts if existing_cash_accounts else []
     
     # Add new cash account
     with st.form("add_cash_account"):
@@ -926,7 +928,13 @@ def show_cash_accounts_helper(reporting_date):
         
         if st.form_submit_button("Add Cash Account"):
             if account_name and balance > 0:
-                st.session_state.cash_accounts.append({"name": account_name, "balance": balance})
+                new_account = {"name": account_name, "balance": balance, "date_added": reporting_date}
+                st.session_state.cash_accounts.append(new_account)
+                
+                # Save to financial data structure permanently
+                st.session_state.financial_data.setdefault("cash_accounts_details", []).append(new_account)
+                save_financial_data_incremental()
+                
                 st.success(f"Added {account_name}: ${balance:,.2f}")
     
     # Show existing accounts
@@ -941,7 +949,16 @@ def show_cash_accounts_helper(reporting_date):
                 st.write(f"${account['balance']:,.2f}")
             with col3:
                 if st.button("Remove", key=f"remove_cash_{i}"):
-                    st.session_state.cash_accounts.pop(i)
+                    # Remove from both session state and financial data
+                    removed_account = st.session_state.cash_accounts.pop(i)
+                    
+                    # Update financial data
+                    cash_details = st.session_state.financial_data.get("cash_accounts_details", [])
+                    st.session_state.financial_data["cash_accounts_details"] = [
+                        acc for acc in cash_details 
+                        if not (acc["name"] == removed_account["name"] and acc["balance"] == removed_account["balance"])
+                    ]
+                    save_financial_data_incremental()
                     st.rerun()
             total_cash += account['balance']
         
@@ -949,8 +966,11 @@ def show_cash_accounts_helper(reporting_date):
         
         if st.button("Set as Cash Amount"):
             st.session_state.financial_data.setdefault("assets", {})["cash"] = str(int(total_cash))
+            
+            # Also save the detailed breakdown
+            st.session_state.financial_data["cash_accounts_details"] = st.session_state.cash_accounts.copy()
             save_financial_data_incremental()
-            st.success(f"Total cash set to ${total_cash:,.2f}")
+            st.success(f"Total cash set to ${total_cash:,.2f} with detailed account breakdown saved")
 
 def show_ar_estimation_helper():
     """Three-path AR estimation helper"""
@@ -964,15 +984,30 @@ def show_ar_estimation_helper():
         ar_amount = st.number_input("Enter AR amount directly:", min_value=0.0, format="%.2f", key="ar_manual")
         if st.button("Set AR Amount") and ar_amount > 0:
             st.session_state.financial_data.setdefault("assets", {})["accounts_receivable"] = str(int(ar_amount))
+            
+            # Save the method used for AR estimation
+            st.session_state.financial_data.setdefault("ar_estimation_details", {}).update({
+                "method": "Manual Input",
+                "amount": ar_amount,
+                "date_set": time.strftime("%Y-%m-%d %H:%M:%S")
+            })
             save_financial_data_incremental()
-            st.success(f"A/R set to ${ar_amount:,.2f}")
+            st.success(f"A/R set to ${ar_amount:,.2f} (Manual Input)")
     
     elif method == "January Payments Estimate":
         jan_payments = st.number_input("Customer payments Jan 1-15, 2025:", min_value=0.0, format="%.2f", key="ar_jan")
         if st.button("Estimate A/R") and jan_payments > 0:
             st.session_state.financial_data.setdefault("assets", {})["accounts_receivable"] = str(int(jan_payments))
+            
+            # Save the estimation details
+            st.session_state.financial_data.setdefault("ar_estimation_details", {}).update({
+                "method": "January Payments Estimate",
+                "january_payments": jan_payments,
+                "estimated_amount": jan_payments,
+                "date_set": time.strftime("%Y-%m-%d %H:%M:%S")
+            })
             save_financial_data_incremental()
-            st.success(f"A/R estimated at ${jan_payments:,.2f}")
+            st.success(f"A/R estimated at ${jan_payments:,.2f} (January Payments Method)")
     
     else:  # Software/Invoice Upload
         uploaded_file = st.file_uploader("Upload customer aging or invoice file:", type=['csv', 'xlsx'], key="ar_upload")
@@ -988,8 +1023,18 @@ def show_ar_estimation_helper():
                     st.success(f"Found total AR: ${total_ar:,.2f}")
                     if st.button("Import AR Amount"):
                         st.session_state.financial_data.setdefault("assets", {})["accounts_receivable"] = str(int(total_ar))
+                        
+                        # Save the upload details
+                        st.session_state.financial_data.setdefault("ar_estimation_details", {}).update({
+                            "method": "Software/Invoice Upload",
+                            "filename": uploaded_file.name,
+                            "amount_column": amount_cols[0],
+                            "total_amount": total_ar,
+                            "records_count": len(df),
+                            "date_set": time.strftime("%Y-%m-%d %H:%M:%S")
+                        })
                         save_financial_data_incremental()
-                        st.success("A/R imported successfully!")
+                        st.success("A/R imported successfully with file details saved!")
             except Exception as e:
                 st.error(f"Error processing file: {e}")
 
@@ -1012,12 +1057,14 @@ def show_inventory_helper(reporting_date):
             "value": inv_value,
             "type": inv_type,
             "cost_method": cost_method,
-            "description": inv_description
+            "description": inv_description,
+            "reporting_date": reporting_date,
+            "date_set": time.strftime("%Y-%m-%d %H:%M:%S")
         }
         st.session_state.financial_data.setdefault("assets", {})["inventory"] = str(int(inv_value))
-        st.session_state.financial_data.setdefault("inventory_details", {}).update(inventory_data)
+        st.session_state.financial_data["inventory_details"] = inventory_data
         save_financial_data_incremental()
-        st.success(f"Inventory set: ${inv_value:,.2f} ({inv_type}, {cost_method})")
+        st.success(f"Inventory set: ${inv_value:,.2f} ({inv_type}, {cost_method}) with full details saved")
 
 def show_owner_transactions_helper():
     """Owner loans and distributions helper"""
@@ -1038,8 +1085,16 @@ def show_owner_transactions_helper():
         
         if st.button("Set Retained Earnings"):
             st.session_state.financial_data.setdefault("equity", {})["retained_earnings"] = str(int(retained_earnings))
+            
+            # Save the calculation details
+            st.session_state.financial_data.setdefault("owner_transactions", {}).update({
+                "net_income_2024": net_income_2024,
+                "distributions_taken": distributions,
+                "calculated_retained_earnings": retained_earnings,
+                "calculation_date": time.strftime("%Y-%m-%d %H:%M:%S")
+            })
             save_financial_data_incremental()
-            st.success(f"Retained Earnings set to ${retained_earnings:,.2f}")
+            st.success(f"Retained Earnings set to ${retained_earnings:,.2f} with calculation details saved")
     
     st.markdown("---")
     
@@ -1051,14 +1106,25 @@ def show_owner_transactions_helper():
     
     if loan_direction != "No loans":
         loan_amount = st.number_input("Loan Amount ($):", min_value=0.0, format="%.2f", key="owner_loan_amount")
+        loan_notes = st.text_area("Loan Notes:", placeholder="Interest rate, terms, etc...", key="owner_loan_notes")
         
         if st.button("Set Owner Loan") and loan_amount > 0:
+            loan_data = {
+                "direction": loan_direction,
+                "amount": loan_amount,
+                "notes": loan_notes,
+                "date_set": time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            
             if "Business owes Owner" in loan_direction:
                 st.session_state.financial_data.setdefault("liabilities", {})["loans_from_owner"] = str(int(loan_amount))
                 st.success(f"Added liability: Loans from Owner ${loan_amount:,.2f}")
             else:
                 st.session_state.financial_data.setdefault("assets", {})["loans_to_owner"] = str(int(loan_amount))
                 st.success(f"Added asset: Loans to Owner ${loan_amount:,.2f}")
+            
+            # Save detailed loan information
+            st.session_state.financial_data.setdefault("owner_transactions", {})["loan_details"] = loan_data
             save_financial_data_incremental()
 
 def show_accruals_helper(reporting_date):
@@ -1082,6 +1148,16 @@ def show_accruals_helper(reporting_date):
         
         if st.button("Set Accrued Expenses"):
             liabilities = st.session_state.financial_data.setdefault("liabilities", {})
+            accrual_details = {
+                "unpaid_wages": unpaid_wages,
+                "unpaid_payroll_tax": unpaid_payroll_tax,
+                "unpaid_other": unpaid_other,
+                "description": accrual_description,
+                "total_accruals": total_accruals,
+                "reporting_date": reporting_date,
+                "date_set": time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            
             if unpaid_wages > 0:
                 liabilities["wages_payable"] = str(int(unpaid_wages))
             if unpaid_payroll_tax > 0:
@@ -1090,8 +1166,10 @@ def show_accruals_helper(reporting_date):
                 current_accrued = float(liabilities.get("accrued_expenses", 0))
                 liabilities["accrued_expenses"] = str(int(current_accrued + unpaid_other))
             
+            # Save detailed accrual information
+            st.session_state.financial_data["accrual_details"] = accrual_details
             save_financial_data_incremental()
-            st.success(f"Added accrued expenses totaling ${total_accruals:,.2f}")
+            st.success(f"Added accrued expenses totaling ${total_accruals:,.2f} with detailed breakdown saved")
 
 def show_onboarding_page():
     """Main onboarding page function"""
